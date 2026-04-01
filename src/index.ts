@@ -46,9 +46,11 @@ export type ProcessVideoTrackOptions = {
  * Configuration options for the virtual background.
  */
 const opts = {
-    wasmLoaderPath: 'mediapipe/tasks-vision/wasm/vision_wasm_internal.js',
-    wasmBinaryPath: 'mediapipe/tasks-vision/wasm/vision_wasm_internal.wasm',
-    modelPath: 'mediapipe/models/selfie_multiclass_256x256.tflite',
+    // Default to the hosted MediaPipe runtime so the bundle stays small.
+    // Callers can override these paths when they self-host the assets.
+    wasmLoaderPath: '',
+    wasmBinaryPath: '',
+    modelPath: 'mediapipe/models/selfie_segmenter.tflite',
     runWorker: false,
     enabled: true,
     backgroundUrl: '',
