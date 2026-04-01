@@ -6,6 +6,59 @@ import { Graph } from './graph';
 
 export let options = {} as ProcessVideoTrackOptions;
 
+const MODEL_FALLBACKS = {
+    selfieMulticlass:
+        'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
+    selfieSegmenter:
+        'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+} as const;
+
+function looksLikeTflite(bytes: Uint8Array) {
+    return (
+        bytes.length >= 8 &&
+        bytes[4] === 0x54 &&
+        bytes[5] === 0x46 &&
+        bytes[6] === 0x4c &&
+        bytes[7] === 0x33
+    );
+}
+
+async function fetchModelAsset(modelPath: string) {
+    const candidates = [modelPath];
+    if (modelPath.includes('selfie_segmenter')) {
+        candidates.push(MODEL_FALLBACKS.selfieSegmenter);
+    } else if (modelPath.includes('selfie_multiclass_256x256')) {
+        candidates.push(MODEL_FALLBACKS.selfieMulticlass);
+    }
+
+    let lastError: Error | null = null;
+
+    for (const candidate of candidates) {
+        try {
+            const response = await fetch(candidate, { cache: 'no-store' });
+            if (!response.ok) {
+                throw new Error(
+                    `HTTP ${response.status} ${response.statusText} while fetching ${candidate}`
+                );
+            }
+
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            if (!looksLikeTflite(bytes)) {
+                throw new Error(
+                    `Response from ${candidate} did not look like a TFLite model (received ${bytes.length} bytes)`
+                );
+            }
+
+            return bytes;
+        } catch (err) {
+            lastError = err instanceof Error ? err : new Error(String(err));
+            console.warn(`[virtual-background] Failed to load model asset from ${candidate}`, err);
+        }
+    }
+
+    throw lastError ?? new Error(`Unable to load model asset from ${modelPath}`);
+}
+
 async function createSegmenter(canvas: OffscreenCanvas) {
     const { wasmLoaderPath, wasmBinaryPath, modelPath } = options;
     const fileset =
@@ -18,11 +71,13 @@ async function createSegmenter(canvas: OffscreenCanvas) {
                   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm'
               );
     console.log(`[virtual-background] createSegmenter`, { canvas });
+    const modelAssetBuffer = await fetchModelAsset(
+        modelPath ||
+            'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite'
+    );
     const segmenter = await ImageSegmenter.createFromOptions(fileset, {
         baseOptions: {
-            modelAssetPath:
-                modelPath ||
-                'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
+            modelAssetBuffer,
             delegate: 'GPU',
         },
         runningMode: 'VIDEO',
